@@ -60,7 +60,7 @@ def build(
         load_in_8bit=load_in_8bit,
         lazy_unpickle=merge_options.lazy_unpickle,
         trust_remote_code=merge_options.trust_remote_code,
-        device=device,
+        device=merge_options.device,
     )
     # gate_vecs: (num_layers, num_experts, hidden_size)
     router_weights = gate_vecs[:, : len(config.experts), :]
@@ -157,13 +157,6 @@ def select_output_arch(
     help="Load model in 8bit for computing hidden states",
 )
 @click.option(
-    "--device",
-    type=str,
-    default="auto",
-    help="Device to use to compute embeddings",
-    show_default=True,
-)
-@click.option(
     "--i-understand-this-is-not-useful-without-training",
     type=bool,
     default=False,
@@ -176,7 +169,6 @@ def main(
     out_path: str,
     load_in_4bit: bool,
     load_in_8bit: bool,
-    device: str,
     i_understand_this_is_not_useful_without_training: bool,
     merge_options: MergeOptions,
 ):
@@ -198,7 +190,7 @@ def main(
         merge_options=merge_options,
         load_in_4bit=load_in_4bit,
         load_in_8bit=load_in_8bit,
-        device=device,
+        device=merge_options.device,
         allow_all_same=i_understand_this_is_not_useful_without_training,
         verbose=merge_options.verbosity > 0,
     )
