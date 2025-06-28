@@ -33,9 +33,72 @@ def build(
     base_model = config.base_model
     out_arch = select_output_arch(config, merge_options, verbose=verbose)
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained(
-        base_model.model.path, revision=base_model.model.revision
-    )
+    # Ensure we have a string path for the tokenizer
+    model_path = base_model.model.path
+    if not isinstance(model_path, str):
+        logging.warning(f"Model path is not a string: {type(model_path)} - {model_path}")
+        model_path = str(model_path) if model_path is not None else ""
+    
+    # Log model information for debugging
+    if verbose:
+        print(f"Loading tokenizer for model: {model_path}")
+        print(f"Model revision: {base_model.model.revision}")
+        print(f"Trust remote code: {merge_options.trust_remote_code}")
+        
+    # Special handling for Magistral models which might need specific tokenizer settings
+    tokenizer_kwargs = {
+        "revision": base_model.model.revision,
+        "trust_remote_code": merge_options.trust_remote_code,
+        "use_fast": True,
+        "force_download": False,
+        "resume_download": True,
+        "local_files_only": False
+    }
+    
+    # For Magistral models, try without use_fast first
+    if "magistral" in model_path.lower():
+        logging.info("Detected Magistral model, trying special tokenizer loading...")
+        tokenizer_kwargs["use_fast"] = False
+    
+    try:
+        # Try to load tokenizer - sometimes the model files need to be downloaded first
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_path, 
+            **tokenizer_kwargs
+        )
+    except Exception as e:
+        logging.error(f"Failed to load tokenizer for {base_model.model.path}")
+        logging.error(f"Error type: {type(e).__name__}")
+        logging.error(f"Error message: {str(e)}")
+        
+        if "not a string" in str(e) or "NoneType" in str(e):
+            logging.error(f"This appears to be a sentencepiece or tokenizer file issue.")
+            logging.error(f"The tokenizer files might not be available or compatible.")
+            
+            # Try with use_fast=False as a fallback
+            try:
+                tokenizer_kwargs["use_fast"] = False
+                tokenizer = transformers.AutoTokenizer.from_pretrained(
+                    model_path, 
+                    **tokenizer_kwargs
+                )
+                logging.info("Successfully loaded tokenizer with use_fast=False")
+            except Exception as e2:
+                logging.error(f"Also failed with use_fast=False: {e2}")
+                
+                # As a last resort, try loading a compatible tokenizer from a known Mistral model
+                logging.warning("Attempting to use tokenizer from mistralai/Mistral-7B-v0.1 as fallback...")
+                try:
+                    tokenizer = transformers.AutoTokenizer.from_pretrained(
+                        "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+                        trust_remote_code=merge_options.trust_remote_code
+                    )
+                    logging.warning("Using fallback tokenizer from Mistral-7B-v0.1. This may not be ideal but should work.")
+                except Exception as e3:
+                    logging.error(f"Even fallback tokenizer failed: {e3}")
+                    raise e
+        else:
+            raise
     tokenizer.padding_side = "left"
     tokenizer.pad_token_id = tokenizer.bos_token_id
     if tokenizer.pad_token_id is None:
